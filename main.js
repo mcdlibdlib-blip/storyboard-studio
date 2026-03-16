@@ -235,11 +235,11 @@ function setBtnLoading(btn, loading) {
 // =====================
 let genTimerInterval = null;
 
-// Estimated durations per video length (seconds)
-const EST_DURATION = { '15초': 18, '30초': 25, '60초': 32, '3분': 40 };
+// Estimated durations per video length (seconds) — conservative upper bounds
+const EST_DURATION = { '15초': 35, '30초': 50, '60초': 65, '3분': 80 };
 
 function startGenTimer(duration) {
-  const totalSec   = EST_DURATION[duration] || 25;
+  const totalSec   = EST_DURATION[duration] || 50;
   const startTime  = Date.now();
   const timerEl    = $('genTimer');
   const progressEl = $('genProgress');
@@ -260,22 +260,30 @@ function startGenTimer(duration) {
 
   genTimerInterval = setInterval(() => {
     const elapsed = (Date.now() - startTime) / 1000;
-    const pct     = Math.min(elapsed / totalSec, 0.95); // cap at 95% until done
-    const left    = Math.max(Math.ceil(totalSec - elapsed), 1);
 
-    // Update progress bar
-    barEl.style.setProperty('--pct', (pct * 100).toFixed(1) + '%');
+    // Asymptotic progress: approaches 90% quickly, then slows dramatically
+    // Never freezes at a fixed value — always keeps moving
+    const pct = 1 - Math.exp(-elapsed / (totalSec * 0.6));
+    const displayPct = Math.min(pct * 92, 92); // cap at 92% until actually done
 
-    // Update timer in button
-    const elapsedInt = Math.floor(elapsed);
-    timerEl.textContent = `(${elapsedInt}s)`;
+    barEl.style.setProperty('--pct', displayPct.toFixed(1) + '%');
 
-    // Update time left
-    timeLeftEl.textContent = `약 ${left}초 남음`;
+    // Elapsed timer in button
+    timerEl.textContent = `(${Math.floor(elapsed)}s)`;
 
-    // Cycle status messages
-    const msgIdx = Math.min(Math.floor(pct * statusMessages.length), statusMessages.length - 1);
-    statusEl.textContent = statusMessages[msgIdx];
+    // Time remaining: only show estimate while we're still within range
+    const left = Math.ceil(totalSec - elapsed);
+    if (left > 5) {
+      timeLeftEl.textContent = `약 ${left}초 남음`;
+    } else if (left > 0) {
+      timeLeftEl.textContent = '거의 다 됐어요...';
+    } else {
+      timeLeftEl.textContent = '응답 대기 중...';
+    }
+
+    // Status message cycles based on real elapsed time, not estimated pct
+    const phase = Math.min(Math.floor(elapsed / (totalSec / statusMessages.length)), statusMessages.length - 1);
+    statusEl.textContent = statusMessages[phase];
   }, 500);
 }
 
