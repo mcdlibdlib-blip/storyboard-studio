@@ -1,14 +1,206 @@
 <!doctype html>
-<html lang="en">
+<html lang="ko">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Hello World</title>
-  <link href='/style.css' rel='stylesheet'>
+  <title>Storyboard Studio — AI 광고 스토리보드 생성기</title>
+  <link href="/style.css" rel="stylesheet">
 </head>
 <body>
-  <h1>Hello, world!</h1>
-  <button onclick="console.log('hello');">Press me</button>
-  <script defer type="text/javascript" src="/main.js"></script>
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">&#9654;</span>
+        <span class="logo-text">Storyboard Studio</span>
+      </div>
+      <button class="btn-settings" id="btnSettings" title="API 키 설정">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
+          <path d="M12 2v2m0 16v2M2 12h2m16 0h2"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- API Key Modal -->
+  <div class="modal-overlay" id="apiModal">
+    <div class="modal">
+      <h2>Anthropic API 키 설정</h2>
+      <p class="modal-desc">Claude API 키를 입력하세요. 키는 브라우저 로컬스토리지에만 저장되며 외부로 전송되지 않습니다.</p>
+      <div class="form-group">
+        <label>API Key</label>
+        <input type="password" id="apiKeyInput" placeholder="sk-ant-..." autocomplete="off" />
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="btnCancelApi">취소</button>
+        <button class="btn btn-primary" id="btnSaveApi">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="main">
+    <!-- Step Indicator -->
+    <div class="steps">
+      <div class="step active" id="step1Indicator">
+        <div class="step-num">1</div>
+        <div class="step-label">이미지 분석</div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step" id="step2Indicator">
+        <div class="step-num">2</div>
+        <div class="step-label">브리프 작성</div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step" id="step3Indicator">
+        <div class="step-num">3</div>
+        <div class="step-label">스토리보드</div>
+      </div>
+    </div>
+
+    <!-- SECTION 1: Image Upload & Analysis -->
+    <section class="section" id="sectionUpload">
+      <div class="section-header">
+        <h2>레퍼런스 이미지 업로드</h2>
+        <p>광고의 분위기를 잘 나타내는 이미지를 업로드하세요. AI가 컬러감, 아트 스타일, 톤&매너를 분석합니다.</p>
+      </div>
+
+      <div class="upload-area" id="uploadArea">
+        <input type="file" id="fileInput" accept="image/*" multiple hidden />
+        <div class="upload-placeholder" id="uploadPlaceholder">
+          <div class="upload-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+          </div>
+          <p class="upload-text">이미지를 드래그하거나 클릭하여 업로드</p>
+          <p class="upload-hint">PNG, JPG, WEBP 지원 · 최대 3장</p>
+        </div>
+        <div class="preview-grid" id="previewGrid"></div>
+      </div>
+
+      <div class="upload-actions">
+        <button class="btn btn-primary btn-lg" id="btnAnalyze" disabled>
+          <span class="btn-text">AI 분석 시작</span>
+          <span class="btn-loader" hidden>
+            <svg class="spinner" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 70"/></svg>
+            분석 중...
+          </span>
+        </button>
+      </div>
+
+      <!-- Analysis Result -->
+      <div class="analysis-result" id="analysisResult" hidden>
+        <div class="result-card">
+          <h3>분석 결과</h3>
+          <div class="result-grid">
+            <div class="result-block" id="colorBlock">
+              <h4>컬러 팔레트</h4>
+              <div class="color-swatches" id="colorSwatches"></div>
+              <p class="result-text" id="colorText"></p>
+            </div>
+            <div class="result-block" id="artBlock">
+              <h4>아트 스타일</h4>
+              <div class="tags" id="artTags"></div>
+              <p class="result-text" id="artText"></p>
+            </div>
+            <div class="result-block" id="toneBlock">
+              <h4>톤 &amp; 매너</h4>
+              <div class="tags" id="toneTags"></div>
+              <p class="result-text" id="toneText"></p>
+            </div>
+            <div class="result-block" id="moodBlock">
+              <h4>무드 &amp; 감성</h4>
+              <p class="result-text" id="moodText"></p>
+            </div>
+          </div>
+          <div class="result-summary" id="resultSummary"></div>
+          <button class="btn btn-primary" id="btnToStep2">다음 단계: 광고 브리프 작성 →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: Ad Brief -->
+    <section class="section" id="sectionBrief" hidden>
+      <div class="section-header">
+        <h2>광고 브리프 작성</h2>
+        <p>광고할 제품/서비스 정보를 입력하면 분석된 스타일을 반영한 스토리보드를 생성합니다.</p>
+      </div>
+
+      <div class="analysis-badge" id="analysisBadge"></div>
+
+      <div class="brief-form">
+        <div class="form-group">
+          <label>제품/서비스명 <span class="required">*</span></label>
+          <input type="text" id="productName" placeholder="예: 오가닉 스킨케어 라인" />
+        </div>
+        <div class="form-group">
+          <label>핵심 메시지 <span class="required">*</span></label>
+          <input type="text" id="coreMessage" placeholder="예: 자연에서 온 순수함으로 피부 본연의 빛을 되찾다" />
+        </div>
+        <div class="form-group">
+          <label>타겟 오디언스</label>
+          <input type="text" id="targetAudience" placeholder="예: 20-35세 자연주의 라이프스타일 여성" />
+        </div>
+        <div class="form-group">
+          <label>광고 영상 길이</label>
+          <select id="adDuration">
+            <option value="15초">15초 (숏폼)</option>
+            <option value="30초" selected>30초 (기본)</option>
+            <option value="60초">60초 (브랜드필름)</option>
+            <option value="3분">3분 이상 (스토리텔링)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>추가 요청사항</label>
+          <textarea id="extraNotes" rows="3" placeholder="예: 계절감은 가을, 야외 배경, 내레이션 없이 음악만..."></textarea>
+        </div>
+        <div class="form-actions">
+          <button class="btn btn-secondary" id="btnBackToStep1">← 이전</button>
+          <button class="btn btn-primary btn-lg" id="btnGenerate">
+            <span class="btn-text">스토리보드 생성</span>
+            <span class="btn-loader" hidden>
+              <svg class="spinner" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 70"/></svg>
+              생성 중...
+            </span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 3: Storyboard Output -->
+    <section class="section" id="sectionStoryboard" hidden>
+      <div class="section-header">
+        <div class="sb-header-row">
+          <div>
+            <h2>광고 스토리보드</h2>
+            <p id="sbSubtitle"></p>
+          </div>
+          <div class="sb-header-actions">
+            <button class="btn btn-secondary" id="btnRegenerate">다시 생성</button>
+            <button class="btn btn-primary" id="btnNewProject">새 프로젝트</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Style Summary Bar -->
+      <div class="style-bar" id="styleBar"></div>
+
+      <!-- Scene Cards -->
+      <div class="scenes-container" id="scenesContainer"></div>
+
+      <!-- Overall Direction -->
+      <div class="direction-card" id="directionCard" hidden>
+        <h3>연출 가이드</h3>
+        <div id="directionContent"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <script src="/main.js"></script>
 </body>
 </html>
