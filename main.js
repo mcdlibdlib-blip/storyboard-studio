@@ -714,11 +714,11 @@ function createSceneCard(scene) {
 // AI ILLUSTRATION GENERATION (DALL-E 3)
 // =====================
 async function generateSceneIllustrations(scenes) {
+  // Collect all frames by index (more reliable than data-scene selector)
+  const frames = Array.from(scenesContainer.querySelectorAll('.scene-visual-frame'));
+
   // All frames to loading state
-  scenes.forEach(s => {
-    const frame = document.querySelector(`[data-scene="${s.number}"]`);
-    if (frame) frame.classList.add('frame-loading');
-  });
+  frames.forEach(f => f.classList.add('frame-loading'));
 
   // ~12s per scene sequentially
   const perScene = 12;
@@ -771,13 +771,19 @@ async function generateSceneIllustrations(scenes) {
     // Generate each scene sequentially (DALL-E 3 rate limits)
     for (let i = 0; i < scenes.length; i++) {
       const scene = scenes[i];
-      const frame = document.querySelector(`[data-scene="${scene.number}"]`);
+      const frame = frames[i];
 
       try {
-        const b64 = await generateDalleImage(scene);
+        const imageUrl = await generateDalleImage(scene);
         if (frame) {
+          const img = document.createElement('img');
+          img.alt = `씬 ${scene.number}`;
+          img.onerror = () => console.warn(`씬 ${scene.number} 이미지 로드 실패`);
           frame.classList.remove('frame-loading');
-          frame.innerHTML = `<img src="data:image/png;base64,${b64}" alt="씬 ${scene.number}" />`;
+          frame.innerHTML = '';
+          frame.appendChild(img);
+          // Set src after appending to DOM for reliable load
+          img.src = imageUrl;
         }
       } catch (err) {
         console.warn(`씬 ${scene.number} 이미지 생성 실패:`, err.message);
@@ -793,10 +799,7 @@ async function generateSceneIllustrations(scenes) {
       console.warn('일러스트 생성 실패:', err);
       showToast('일러스트 생성 중 오류: ' + err.message, 'error');
     }
-    scenes.forEach(s => {
-      const frame = document.querySelector(`[data-scene="${s.number}"]`);
-      if (frame) frame.classList.remove('frame-loading');
-    });
+    frames.forEach(f => f.classList.remove('frame-loading'));
   } finally {
     clearInterval(illustInterval);
     const barFill = document.getElementById('illustBarFill');
@@ -840,7 +843,7 @@ async function generateDalleImage(scene) {
       n: 1,
       size: '1792x1024',
       quality: 'standard',
-      response_format: 'b64_json',
+      response_format: 'url',
     }),
   });
 
@@ -850,7 +853,7 @@ async function generateDalleImage(scene) {
   }
 
   const data = await resp.json();
-  return data.data[0].b64_json;
+  return data.data[0].url;
 }
 
 function generateSceneArt(scene, shotClass) {
