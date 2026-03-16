@@ -763,7 +763,10 @@ async function generateSceneIllustrations(scenes) {
   }
 
   try {
-    if (!state.openaiKey) throw new Error('NO_OPENAI_KEY');
+    if (!state.openaiKey) {
+      showToast('⚙️ OpenAI API 키를 설정하면 AI 일러스트가 생성됩니다', 'info');
+      throw new Error('NO_OPENAI_KEY');
+    }
 
     // Generate each scene sequentially (DALL-E 3 rate limits)
     for (let i = 0; i < scenes.length; i++) {
@@ -771,13 +774,14 @@ async function generateSceneIllustrations(scenes) {
       const frame = document.querySelector(`[data-scene="${scene.number}"]`);
 
       try {
-        const imageUrl = await generateDalleImage(scene);
+        const b64 = await generateDalleImage(scene);
         if (frame) {
           frame.classList.remove('frame-loading');
-          frame.innerHTML = `<img src="${imageUrl}" alt="씬 ${scene.number}" loading="lazy" />`;
+          frame.innerHTML = `<img src="data:image/png;base64,${b64}" alt="씬 ${scene.number}" />`;
         }
       } catch (err) {
         console.warn(`씬 ${scene.number} 이미지 생성 실패:`, err.message);
+        showToast(`씬 ${scene.number} 생성 실패: ${err.message}`, 'error');
         if (frame) frame.classList.remove('frame-loading');
       }
 
@@ -785,10 +789,9 @@ async function generateSceneIllustrations(scenes) {
     }
 
   } catch (err) {
-    if (err.message === 'NO_OPENAI_KEY') {
-      console.info('OpenAI 키 없음 — SVG 플레이스홀더 유지');
-    } else {
+    if (err.message !== 'NO_OPENAI_KEY') {
       console.warn('일러스트 생성 실패:', err);
+      showToast('일러스트 생성 중 오류: ' + err.message, 'error');
     }
     scenes.forEach(s => {
       const frame = document.querySelector(`[data-scene="${s.number}"]`);
@@ -837,17 +840,17 @@ async function generateDalleImage(scene) {
       n: 1,
       size: '1792x1024',
       quality: 'standard',
-      response_format: 'url',
+      response_format: 'b64_json',
     }),
   });
 
   if (!resp.ok) {
-    const err = await resp.json().catch(() => ({}));
-    throw new Error(err.error?.message || `OpenAI 오류 (${resp.status})`);
+    const errBody = await resp.json().catch(() => ({}));
+    throw new Error(errBody.error?.message || `OpenAI 오류 (${resp.status})`);
   }
 
   const data = await resp.json();
-  return data.data[0].url;
+  return data.data[0].b64_json;
 }
 
 function generateSceneArt(scene, shotClass) {
