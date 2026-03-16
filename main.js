@@ -714,15 +714,11 @@ function createSceneCard(scene) {
 // AI ILLUSTRATION GENERATION (DALL-E 3)
 // =====================
 async function generateSceneIllustrations(scenes) {
-  // Collect all frames by index (more reliable than data-scene selector)
   const frames = Array.from(scenesContainer.querySelectorAll('.scene-visual-frame'));
-
-  // All frames to loading state
   frames.forEach(f => f.classList.add('frame-loading'));
 
-  // ~12s per scene sequentially
-  const perScene = 12;
-  const estSec   = scenes.length * perScene;
+  // Estimate ~15s per image (Pollinations load time)
+  const estSec    = scenes.length * 15;
   const startTime = Date.now();
 
   // Banner
@@ -733,7 +729,7 @@ async function generateSceneIllustrations(scenes) {
     <div class="illust-banner-top">
       <div class="illust-banner-left">
         <svg class="spinner" viewBox="0 0 24 24" width="15" height="15"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 70"/></svg>
-        <span id="illustStatus">DALL-E 3로 스토리보드 일러스트를 그리고 있습니다...</span>
+        <span id="illustStatus">AI가 스토리보드 일러스트를 그리고 있습니다...</span>
       </div>
       <span id="illustTimeLeft" class="illust-time"></span>
     </div>
@@ -742,118 +738,84 @@ async function generateSceneIllustrations(scenes) {
     </div>`;
   scenesContainer.insertAdjacentElement('beforebegin', banner);
 
-  // Progress ticker (time-based)
   const illustInterval = setInterval(() => {
     const elapsed = (Date.now() - startTime) / 1000;
-    const left    = Math.ceil(estSec - elapsed);
-    const timeEl  = document.getElementById('illustTimeLeft');
-    if (timeEl) {
-      timeEl.textContent = left > 5 ? `약 ${left}초 남음` : left > 0 ? '거의 다 됐어요...' : '마무리 중...';
-    }
+    const left = Math.ceil(estSec - elapsed);
+    const el = document.getElementById('illustTimeLeft');
+    if (el) el.textContent = left > 5 ? `약 ${left}초 남음` : left > 0 ? '거의 다 됐어요...' : '마무리 중...';
   }, 500);
 
-  function updateBannerProgress(done, total) {
-    const pct = (done / total) * 100;
-    const barFill = document.getElementById('illustBarFill');
-    if (barFill) barFill.style.width = pct.toFixed(0) + '%';
-    const statusEl = document.getElementById('illustStatus');
-    if (statusEl) statusEl.textContent = done < total
-      ? `씬 ${done}/${total} 완료 — 다음 씬 그리는 중...`
-      : `${total}개 씬 일러스트 완성!`;
+  let done = 0;
+  function onSceneDone() {
+    done++;
+    const pct = (done / scenes.length) * 100;
+    const bar = document.getElementById('illustBarFill');
+    if (bar) bar.style.width = pct.toFixed(0) + '%';
+    const status = document.getElementById('illustStatus');
+    if (status) status.textContent = done < scenes.length
+      ? `씬 ${done}/${scenes.length} 완료 — 다음 씬 그리는 중...`
+      : `${scenes.length}개 씬 일러스트 완성!`;
   }
 
-  try {
-    if (!state.openaiKey) {
-      showToast('⚙️ OpenAI API 키를 설정하면 AI 일러스트가 생성됩니다', 'info');
-      throw new Error('NO_OPENAI_KEY');
-    }
+  // Load all images in parallel — each is just an img src URL, no CORS issue
+  const loadPromises = scenes.map((scene, i) => new Promise(resolve => {
+    const frame = frames[i];
+    if (!frame) { resolve(); return; }
 
-    // Generate each scene sequentially (DALL-E 3 rate limits)
-    for (let i = 0; i < scenes.length; i++) {
-      const scene = scenes[i];
-      const frame = frames[i];
+    const img = document.createElement('img');
+    img.alt = `씬 ${scene.number}`;
 
-      try {
-        const imageUrl = await generateDalleImage(scene);
-        if (frame) {
-          const img = document.createElement('img');
-          img.alt = `씬 ${scene.number}`;
-          img.onerror = () => console.warn(`씬 ${scene.number} 이미지 로드 실패`);
-          frame.classList.remove('frame-loading');
-          frame.innerHTML = '';
-          frame.appendChild(img);
-          // Set src after appending to DOM for reliable load
-          img.src = imageUrl;
-        }
-      } catch (err) {
-        console.warn(`씬 ${scene.number} 이미지 생성 실패:`, err.message);
-        showToast(`씬 ${scene.number} 생성 실패: ${err.message}`, 'error');
-        if (frame) frame.classList.remove('frame-loading');
-      }
+    img.onload = () => {
+      frame.classList.remove('frame-loading');
+      frame.innerHTML = '';
+      frame.appendChild(img);
+      onSceneDone();
+      resolve();
+    };
+    img.onerror = () => {
+      frame.classList.remove('frame-loading');
+      onSceneDone();
+      resolve();
+    };
 
-      updateBannerProgress(i + 1, scenes.length);
-    }
+    img.src = buildPollinationsUrl(scene);
+  }));
 
-  } catch (err) {
-    if (err.message !== 'NO_OPENAI_KEY') {
-      console.warn('일러스트 생성 실패:', err);
-      showToast('일러스트 생성 중 오류: ' + err.message, 'error');
-    }
-    frames.forEach(f => f.classList.remove('frame-loading'));
-  } finally {
-    clearInterval(illustInterval);
-    const barFill = document.getElementById('illustBarFill');
-    if (barFill) barFill.style.width = '100%';
-    setTimeout(() => document.getElementById('illustBanner')?.remove(), 700);
-  }
+  await Promise.all(loadPromises);
+
+  clearInterval(illustInterval);
+  const bar = document.getElementById('illustBarFill');
+  if (bar) bar.style.width = '100%';
+  setTimeout(() => document.getElementById('illustBanner')?.remove(), 800);
 }
 
-async function generateDalleImage(scene) {
+function buildPollinationsUrl(scene) {
   const shotMap = {
     '와이드': 'extreme wide shot, landscape panorama',
-    '미디엄': 'medium shot, character upper body',
-    '클로즈': 'close-up shot, face or object detail',
-    '조감': 'bird\'s eye view, top-down angle',
-    'POV':   'POV shot, first person perspective',
+    '미디엄': 'medium shot, character from waist up',
+    '클로즈': 'close-up shot, face or product detail',
+    '조감':   'bird eye view, top-down aerial shot',
+    'POV':    'POV first person perspective shot',
   };
   const shotKey  = Object.keys(shotMap).find(k => (scene.shot_type || '').includes(k)) || '미디엄';
-  const shotDesc = shotMap[shotKey] || 'medium shot';
+  const shotDesc = shotMap[shotKey];
 
   const prompt = [
-    'Professional advertising storyboard illustration.',
-    'Black and white pencil and ink sketch style, grayscale only.',
-    'Bold clean line art, cross-hatching for shadows, cinematic lighting.',
-    `${shotDesc}.`,
+    'professional advertising storyboard illustration',
+    'black and white pencil and ink sketch',
+    'bold clean line art with cross-hatching shadows',
+    'cinematic dramatic lighting',
+    shotDesc,
     scene.visual_description || '',
-    scene.emotion ? `Emotion: ${scene.emotion}.` : '',
-    'Style: high-quality advertising storyboard art similar to film industry pre-production.',
-    'Dynamic composition, expressive characters with detailed faces, motion lines where appropriate.',
-    'White background with bold black ink strokes. No color.',
-  ].filter(Boolean).join(' ');
+    scene.emotion ? `mood: ${scene.emotion}` : '',
+    'expressive characters detailed faces',
+    'dynamic cinematic composition',
+    'white background bold black ink strokes',
+    'no color grayscale only',
+    'high quality film storyboard art style',
+  ].filter(Boolean).join(', ');
 
-  const resp = await fetch('https://api.openai.com/v1/images/generations', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${state.openaiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'dall-e-3',
-      prompt,
-      n: 1,
-      size: '1792x1024',
-      quality: 'standard',
-      response_format: 'url',
-    }),
-  });
-
-  if (!resp.ok) {
-    const errBody = await resp.json().catch(() => ({}));
-    throw new Error(errBody.error?.message || `OpenAI 오류 (${resp.status})`);
-  }
-
-  const data = await resp.json();
-  return data.data[0].url;
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1792&height=1008&nologo=true&model=flux&seed=${scene.number}`;
 }
 
 function generateSceneArt(scene, shotClass) {
