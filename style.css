@@ -819,6 +819,10 @@ body {
   object-fit: cover;
 }
 
+.scene-visual-frame img {
+  filter: grayscale(100%) contrast(1.15);
+}
+
 .illust-banner {
   padding: 12px 16px;
   background: rgba(124,106,247,0.08);

@@ -757,23 +757,39 @@ async function generateSceneIllustrations(scenes) {
       : `${scenes.length}개 씬 일러스트 완성!`;
   }
 
-  // Load all images in parallel — each is just an img src URL, no CORS issue
+  // Load all images in parallel — img src only, no fetch/CORS
   const loadPromises = scenes.map((scene, i) => new Promise(resolve => {
     const frame = frames[i];
     if (!frame) { resolve(); return; }
 
     const img = document.createElement('img');
     img.alt = `씬 ${scene.number}`;
+    img.style.cssText = 'width:100%;height:100%;object-fit:cover;filter:grayscale(100%) contrast(1.15);display:none;';
+
+    // Append to DOM first, then set src — more reliable across browsers
+    frame.appendChild(img);
+
+    // 45s timeout per image
+    const timeout = setTimeout(() => {
+      img.src = '';
+      frame.classList.remove('frame-loading');
+      onSceneDone();
+      resolve();
+    }, 45000);
 
     img.onload = () => {
+      clearTimeout(timeout);
       frame.classList.remove('frame-loading');
-      frame.innerHTML = '';
-      frame.appendChild(img);
+      // Remove placeholder SVG, reveal image
+      frame.querySelectorAll('svg').forEach(s => s.remove());
+      img.style.display = '';
       onSceneDone();
       resolve();
     };
     img.onerror = () => {
+      clearTimeout(timeout);
       frame.classList.remove('frame-loading');
+      img.remove();
       onSceneDone();
       resolve();
     };
@@ -791,31 +807,22 @@ async function generateSceneIllustrations(scenes) {
 
 function buildPollinationsUrl(scene) {
   const shotMap = {
-    '와이드': 'extreme wide shot, landscape panorama',
-    '미디엄': 'medium shot, character from waist up',
-    '클로즈': 'close-up shot, face or product detail',
-    '조감':   'bird eye view, top-down aerial shot',
-    'POV':    'POV first person perspective shot',
+    '와이드': 'wide establishing shot, cinematic landscape',
+    '미디엄': 'medium shot, person waist up, cinematic',
+    '클로즈': 'close up portrait, face detail, cinematic',
+    '조감':   'aerial bird eye view, overhead shot',
+    'POV':    'first person POV perspective',
   };
   const shotKey  = Object.keys(shotMap).find(k => (scene.shot_type || '').includes(k)) || '미디엄';
   const shotDesc = shotMap[shotKey];
 
-  const prompt = [
-    'professional advertising storyboard illustration',
-    'black and white pencil and ink sketch',
-    'bold clean line art with cross-hatching shadows',
-    'cinematic dramatic lighting',
-    shotDesc,
-    scene.visual_description || '',
-    scene.emotion ? `mood: ${scene.emotion}` : '',
-    'expressive characters detailed faces',
-    'dynamic cinematic composition',
-    'white background bold black ink strokes',
-    'no color grayscale only',
-    'high quality film storyboard art style',
-  ].filter(Boolean).join(', ');
+  // Short, punchy Flux prompt — grayscale filter applied via CSS
+  const subject = (scene.visual_description || 'person in scene').slice(0, 120);
+  const mood    = scene.emotion ? `, ${scene.emotion} mood` : '';
 
-  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1792&height=1008&nologo=true&model=flux&seed=${scene.number}`;
+  const prompt = `${shotDesc}, ${subject}${mood}, cinematic photography, dramatic lighting, sharp focus, high detail, advertising campaign, 8k photo`;
+
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1792&height=1008&nologo=true&model=flux-realism&enhance=false&seed=${scene.number * 7}`;
 }
 
 function generateSceneArt(scene, shotClass) {
