@@ -208,12 +208,12 @@ document.getElementById('categoryGrid').addEventListener('click', e => {
 // =====================
 // CLAUDE API
 // =====================
-async function callClaude(messages, system = '') {
+async function callClaude(messages, system = '', maxTokens = 4096) {
   if (!state.apiKey) { openApiModal(); throw new Error('API 키가 필요합니다'); }
 
   const body = {
     model: 'claude-opus-4-6',
-    max_tokens: 4096,
+    max_tokens: maxTokens,
     messages,
   };
   if (system) body.system = system;
@@ -241,13 +241,21 @@ async function callClaude(messages, system = '') {
 }
 
 function extractJSON(text) {
-  // Try markdown code block first
-  const match = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (match) return JSON.parse(match[1].trim());
-  // Try raw JSON object/array
-  const jsonMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-  if (jsonMatch) return JSON.parse(jsonMatch[1]);
-  return JSON.parse(text.trim());
+  // 1. Try markdown code block
+  const codeBlock = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (codeBlock) {
+    try { return JSON.parse(codeBlock[1].trim()); } catch (e) { /* fall through */ }
+  }
+  // 2. Try first complete JSON object (greedy match from first { to last })
+  const firstBrace = text.indexOf('{');
+  const lastBrace  = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    try { return JSON.parse(text.slice(firstBrace, lastBrace + 1)); } catch (e) { /* fall through */ }
+  }
+  // 3. Last resort
+  try { return JSON.parse(text.trim()); } catch (e) {
+    throw new Error('AI 응답을 파싱할 수 없습니다. 다시 시도해주세요.');
+  }
 }
 
 // =====================
@@ -547,7 +555,8 @@ ${styleGuide}
 
     const rawText = await callClaude(
       [{ role: 'user', content: prompt }],
-      '당신은 15년 경력의 광고 크리에이티브 디렉터입니다. 브랜드 비주얼 아이덴티티를 완벽히 반영한 감각적이고 구체적인 스토리보드를 작성합니다. 반드시 JSON만 응답하세요.'
+      '당신은 15년 경력의 광고 크리에이티브 디렉터입니다. 브랜드 비주얼 아이덴티티를 완벽히 반영한 감각적이고 구체적인 스토리보드를 작성합니다. 반드시 JSON만 응답하세요.',
+      8192
     );
 
     state.storyboard = extractJSON(rawText);
@@ -557,9 +566,10 @@ ${styleGuide}
     renderStoryboard(state.storyboard, product, duration);
 
   } catch (err) {
-    console.error(err);
+    console.error('[생성 오류]', err);
     stopGenTimer();
-    showToast('생성 실패: ' + err.message, 'error');
+    const msg = err.message || '알 수 없는 오류';
+    showToast('생성 실패: ' + msg, 'error');
   } finally {
     setBtnLoading(btnGenerate, false);
   }
