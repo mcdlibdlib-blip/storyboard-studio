@@ -564,6 +564,8 @@ ${styleGuide}
     playCompletionSound();
     goToStep(3);
     renderStoryboard(state.storyboard, product, duration);
+    // Generate illustrations asynchronously after cards are rendered
+    generateSceneIllustrations(state.storyboard.scenes);
 
   } catch (err) {
     console.error('[생성 오류]', err);
@@ -656,7 +658,7 @@ function createSceneCard(scene) {
     </div>
     <div class="scene-body">
       <div class="scene-visual">
-        <div class="scene-visual-frame">${svgArt}</div>
+        <div class="scene-visual-frame" data-scene="${scene.number}">${svgArt}</div>
         <div class="scene-shot-info">
           <span class="shot-badge ${shotClass}">${shotType || '샷 미정'}</span>
           ${scene.camera_movement ? `<span class="shot-badge other">${scene.camera_movement}</span>` : ''}
@@ -698,6 +700,96 @@ function createSceneCard(scene) {
       </div>
     </div>`;
   return card;
+}
+
+// =====================
+// AI ILLUSTRATION GENERATION
+// =====================
+async function generateSceneIllustrations(scenes) {
+  // Show loading state on all frames
+  scenes.forEach(s => {
+    const frame = document.querySelector(`[data-scene="${s.number}"]`);
+    if (frame) frame.classList.add('frame-loading');
+  });
+
+  // Show illustration loading banner
+  const banner = document.createElement('div');
+  banner.id = 'illustBanner';
+  banner.className = 'illust-banner';
+  banner.innerHTML = `<svg class="spinner" viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 70"/></svg> AI가 각 씬의 일러스트를 그리고 있습니다...`;
+  scenesContainer.insertAdjacentElement('beforebegin', banner);
+
+  try {
+    const sceneInfo = scenes.map(s => ({
+      number: s.number,
+      shot_type: s.shot_type || '미디엄샷',
+      visual: s.visual_description || '',
+      colors: (s.color_direction || []).slice(0, 3),
+      emotion: s.emotion || '',
+      title: s.title || '',
+    }));
+
+    const prompt = `아래 ${scenes.length}개의 광고 스토리보드 씬에 대해 각각 SVG 일러스트레이션을 생성해주세요.
+
+씬 정보:
+${JSON.stringify(sceneInfo, null, 2)}
+
+SVG 생성 규칙:
+- viewBox="0 0 240 135" (16:9)
+- 전문 광고 스토리보드 아티스트 스타일
+- 씬의 colors 배열을 주요 색상으로 사용 (없으면 어두운 보라/청색 계열)
+- 샷타입에 따른 구도: 와이드샷=지평선/배경경관, 미디엄샷=인물상반신실루엣, 클로즈업=얼굴/오브젝트근접, 조감도=하향각도
+- 인물은 세련된 단색 실루엣으로 표현
+- 배경: 그라디언트 레이어 + 원근감 있는 환경요소 (건물라인, 나무, 지평선, 빛줄기 등)
+- 빛과 그림자: 강한 명암 대비로 영화적 분위기
+- 각 SVG는 완전히 독립적이며 xmlns 포함
+- SVG 내부 id는 반드시 씬번호 포함 (예: id="bg1", id="p2" 등) 중복 방지
+
+반드시 아래 JSON만 응답하세요:
+\`\`\`json
+[
+  {"number": 1, "svg": "<svg viewBox=\\"0 0 240 135\\" xmlns=\\"http://www.w3.org/2000/svg\\">...</svg>"},
+  {"number": 2, "svg": "..."}
+]
+\`\`\``;
+
+    const rawText = await callClaude(
+      [{ role: 'user', content: prompt }],
+      '당신은 광고 스토리보드 전문 일러스트레이터입니다. 영화적이고 감각적인 SVG 씬 일러스트를 생성합니다. 반드시 JSON만 응답하세요.',
+      8192
+    );
+
+    const illustrations = extractJSON(rawText);
+    if (!Array.isArray(illustrations)) throw new Error('illustrations not array');
+
+    // Inject each SVG into the corresponding frame
+    illustrations.forEach(({ number, svg }) => {
+      if (!svg) return;
+      const frame = document.querySelector(`[data-scene="${number}"]`);
+      if (!frame) return;
+      frame.classList.remove('frame-loading');
+      // Sanitize: only allow SVG tags
+      if (svg.trim().startsWith('<svg')) {
+        frame.innerHTML = svg;
+        // Make SVG fill the frame
+        const svgEl = frame.querySelector('svg');
+        if (svgEl) {
+          svgEl.setAttribute('width', '100%');
+          svgEl.setAttribute('height', '100%');
+          svgEl.style.display = 'block';
+        }
+      }
+    });
+
+  } catch (err) {
+    console.warn('일러스트 생성 실패 (기본 아트 유지):', err);
+    scenes.forEach(s => {
+      const frame = document.querySelector(`[data-scene="${s.number}"]`);
+      if (frame) frame.classList.remove('frame-loading');
+    });
+  } finally {
+    document.getElementById('illustBanner')?.remove();
+  }
 }
 
 function generateSceneArt(scene, shotClass) {
