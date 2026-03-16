@@ -2,7 +2,8 @@
 // STATE
 // =====================
 const state = {
-  apiKey: localStorage.getItem('sb_api_key') || '',
+  apiKey:     localStorage.getItem('sb_api_key') || '',
+  openaiKey:  localStorage.getItem('sb_openai_key') || '',
   images: [],           // Array of { file, dataUrl }
   analysisResult: null, // Parsed analysis JSON
   storyboard: null,     // Parsed storyboard JSON
@@ -59,6 +60,7 @@ function showToast(msg, type = '') {
 // =====================
 function openApiModal() {
   apiKeyInput.value = state.apiKey;
+  $('openaiKeyInput').value = state.openaiKey;
   apiModal.classList.add('open');
   apiKeyInput.focus();
 }
@@ -71,10 +73,16 @@ apiModal.addEventListener('click', e => { if (e.target === apiModal) closeApiMod
 
 btnSaveApi.addEventListener('click', () => {
   const key = apiKeyInput.value.trim();
-  if (!key) { showToast('API 키를 입력하세요', 'error'); return; }
+  if (!key) { showToast('Anthropic API 키를 입력하세요', 'error'); return; }
   if (!key.startsWith('sk-')) { showToast('올바른 Anthropic API 키 형식이 아닙니다', 'error'); return; }
   state.apiKey = key;
   localStorage.setItem('sb_api_key', key);
+
+  const openaiKey = $('openaiKeyInput').value.trim();
+  state.openaiKey = openaiKey;
+  if (openaiKey) localStorage.setItem('sb_openai_key', openaiKey);
+  else localStorage.removeItem('sb_openai_key');
+
   closeApiModal();
   showToast('API 키가 저장되었습니다', 'success');
 });
@@ -703,20 +711,21 @@ function createSceneCard(scene) {
 }
 
 // =====================
-// AI ILLUSTRATION GENERATION
+// AI ILLUSTRATION GENERATION (DALL-E 3)
 // =====================
 async function generateSceneIllustrations(scenes) {
-  // Show loading state on all frames
+  // All frames to loading state
   scenes.forEach(s => {
     const frame = document.querySelector(`[data-scene="${s.number}"]`);
     if (frame) frame.classList.add('frame-loading');
   });
 
-  // Estimated time: ~8s per scene (all generated in one call)
-  const estSec  = Math.max(20, scenes.length * 8);
+  // ~12s per scene sequentially
+  const perScene = 12;
+  const estSec   = scenes.length * perScene;
   const startTime = Date.now();
 
-  // Build banner with progress bar
+  // Banner
   const banner = document.createElement('div');
   banner.id = 'illustBanner';
   banner.className = 'illust-banner';
@@ -724,7 +733,7 @@ async function generateSceneIllustrations(scenes) {
     <div class="illust-banner-top">
       <div class="illust-banner-left">
         <svg class="spinner" viewBox="0 0 24 24" width="15" height="15"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 70"/></svg>
-        <span id="illustStatus">AI가 각 씬의 일러스트를 그리고 있습니다...</span>
+        <span id="illustStatus">DALL-E 3로 스토리보드 일러스트를 그리고 있습니다...</span>
       </div>
       <span id="illustTimeLeft" class="illust-time"></span>
     </div>
@@ -733,99 +742,112 @@ async function generateSceneIllustrations(scenes) {
     </div>`;
   scenesContainer.insertAdjacentElement('beforebegin', banner);
 
+  // Progress ticker (time-based)
   const illustInterval = setInterval(() => {
     const elapsed = (Date.now() - startTime) / 1000;
-    const pct     = 1 - Math.exp(-elapsed / (estSec * 0.6));
-    const display = Math.min(pct * 92, 92);
     const left    = Math.ceil(estSec - elapsed);
-
-    const barFill = document.getElementById('illustBarFill');
-    if (barFill) barFill.style.width = display.toFixed(1) + '%';
-
-    const timeEl = document.getElementById('illustTimeLeft');
+    const timeEl  = document.getElementById('illustTimeLeft');
     if (timeEl) {
-      timeEl.textContent = left > 5
-        ? `약 ${left}초 남음`
-        : left > 0 ? '거의 다 됐어요...'
-        : '마무리 중...';
+      timeEl.textContent = left > 5 ? `약 ${left}초 남음` : left > 0 ? '거의 다 됐어요...' : '마무리 중...';
     }
   }, 500);
 
+  function updateBannerProgress(done, total) {
+    const pct = (done / total) * 100;
+    const barFill = document.getElementById('illustBarFill');
+    if (barFill) barFill.style.width = pct.toFixed(0) + '%';
+    const statusEl = document.getElementById('illustStatus');
+    if (statusEl) statusEl.textContent = done < total
+      ? `씬 ${done}/${total} 완료 — 다음 씬 그리는 중...`
+      : `${total}개 씬 일러스트 완성!`;
+  }
+
   try {
-    const sceneInfo = scenes.map(s => ({
-      number: s.number,
-      shot_type: s.shot_type || '미디엄샷',
-      visual: s.visual_description || '',
-      colors: (s.color_direction || []).slice(0, 3),
-      emotion: s.emotion || '',
-      title: s.title || '',
-    }));
+    if (!state.openaiKey) throw new Error('NO_OPENAI_KEY');
 
-    const prompt = `아래 ${scenes.length}개의 광고 스토리보드 씬에 대해 각각 SVG 일러스트레이션을 생성해주세요.
+    // Generate each scene sequentially (DALL-E 3 rate limits)
+    for (let i = 0; i < scenes.length; i++) {
+      const scene = scenes[i];
+      const frame = document.querySelector(`[data-scene="${scene.number}"]`);
 
-씬 정보:
-${JSON.stringify(sceneInfo, null, 2)}
-
-SVG 생성 규칙:
-- viewBox="0 0 240 135" (16:9)
-- 전문 광고 스토리보드 아티스트 스타일
-- 씬의 colors 배열을 주요 색상으로 사용 (없으면 어두운 보라/청색 계열)
-- 샷타입에 따른 구도: 와이드샷=지평선/배경경관, 미디엄샷=인물상반신실루엣, 클로즈업=얼굴/오브젝트근접, 조감도=하향각도
-- 인물은 세련된 단색 실루엣으로 표현
-- 배경: 그라디언트 레이어 + 원근감 있는 환경요소 (건물라인, 나무, 지평선, 빛줄기 등)
-- 빛과 그림자: 강한 명암 대비로 영화적 분위기
-- 각 SVG는 완전히 독립적이며 xmlns 포함
-- SVG 내부 id는 반드시 씬번호 포함 (예: id="bg1", id="p2" 등) 중복 방지
-
-반드시 아래 JSON만 응답하세요:
-\`\`\`json
-[
-  {"number": 1, "svg": "<svg viewBox=\\"0 0 240 135\\" xmlns=\\"http://www.w3.org/2000/svg\\">...</svg>"},
-  {"number": 2, "svg": "..."}
-]
-\`\`\``;
-
-    const rawText = await callClaude(
-      [{ role: 'user', content: prompt }],
-      '당신은 광고 스토리보드 전문 일러스트레이터입니다. 영화적이고 감각적인 SVG 씬 일러스트를 생성합니다. 반드시 JSON만 응답하세요.',
-      8192
-    );
-
-    const illustrations = extractJSON(rawText);
-    if (!Array.isArray(illustrations)) throw new Error('illustrations not array');
-
-    // Inject each SVG into the corresponding frame
-    illustrations.forEach(({ number, svg }) => {
-      if (!svg) return;
-      const frame = document.querySelector(`[data-scene="${number}"]`);
-      if (!frame) return;
-      frame.classList.remove('frame-loading');
-      // Sanitize: only allow SVG tags
-      if (svg.trim().startsWith('<svg')) {
-        frame.innerHTML = svg;
-        // Make SVG fill the frame
-        const svgEl = frame.querySelector('svg');
-        if (svgEl) {
-          svgEl.setAttribute('width', '100%');
-          svgEl.setAttribute('height', '100%');
-          svgEl.style.display = 'block';
+      try {
+        const imageUrl = await generateDalleImage(scene);
+        if (frame) {
+          frame.classList.remove('frame-loading');
+          frame.innerHTML = `<img src="${imageUrl}" alt="씬 ${scene.number}" loading="lazy" />`;
         }
+      } catch (err) {
+        console.warn(`씬 ${scene.number} 이미지 생성 실패:`, err.message);
+        if (frame) frame.classList.remove('frame-loading');
       }
-    });
+
+      updateBannerProgress(i + 1, scenes.length);
+    }
 
   } catch (err) {
-    console.warn('일러스트 생성 실패 (기본 아트 유지):', err);
+    if (err.message === 'NO_OPENAI_KEY') {
+      console.info('OpenAI 키 없음 — SVG 플레이스홀더 유지');
+    } else {
+      console.warn('일러스트 생성 실패:', err);
+    }
     scenes.forEach(s => {
       const frame = document.querySelector(`[data-scene="${s.number}"]`);
       if (frame) frame.classList.remove('frame-loading');
     });
   } finally {
     clearInterval(illustInterval);
-    // Fill to 100% briefly before removing
     const barFill = document.getElementById('illustBarFill');
     if (barFill) barFill.style.width = '100%';
-    setTimeout(() => document.getElementById('illustBanner')?.remove(), 500);
+    setTimeout(() => document.getElementById('illustBanner')?.remove(), 700);
   }
+}
+
+async function generateDalleImage(scene) {
+  const shotMap = {
+    '와이드': 'extreme wide shot, landscape panorama',
+    '미디엄': 'medium shot, character upper body',
+    '클로즈': 'close-up shot, face or object detail',
+    '조감': 'bird\'s eye view, top-down angle',
+    'POV':   'POV shot, first person perspective',
+  };
+  const shotKey  = Object.keys(shotMap).find(k => (scene.shot_type || '').includes(k)) || '미디엄';
+  const shotDesc = shotMap[shotKey] || 'medium shot';
+
+  const prompt = [
+    'Professional advertising storyboard illustration.',
+    'Black and white pencil and ink sketch style, grayscale only.',
+    'Bold clean line art, cross-hatching for shadows, cinematic lighting.',
+    `${shotDesc}.`,
+    scene.visual_description || '',
+    scene.emotion ? `Emotion: ${scene.emotion}.` : '',
+    'Style: high-quality advertising storyboard art similar to film industry pre-production.',
+    'Dynamic composition, expressive characters with detailed faces, motion lines where appropriate.',
+    'White background with bold black ink strokes. No color.',
+  ].filter(Boolean).join(' ');
+
+  const resp = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${state.openaiKey}`,
+    },
+    body: JSON.stringify({
+      model: 'dall-e-3',
+      prompt,
+      n: 1,
+      size: '1792x1024',
+      quality: 'standard',
+      response_format: 'url',
+    }),
+  });
+
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({}));
+    throw new Error(err.error?.message || `OpenAI 오류 (${resp.status})`);
+  }
+
+  const data = await resp.json();
+  return data.data[0].url;
 }
 
 function generateSceneArt(scene, shotClass) {

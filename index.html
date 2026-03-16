@@ -25,11 +25,17 @@
   <!-- API Key Modal -->
   <div class="modal-overlay" id="apiModal">
     <div class="modal">
-      <h2>Anthropic API 키 설정</h2>
-      <p class="modal-desc">Claude API 키를 입력하세요. 키는 브라우저 로컬스토리지에만 저장되며 외부로 전송되지 않습니다.</p>
+      <h2>API 키 설정</h2>
+      <p class="modal-desc">키는 브라우저 로컬스토리지에만 저장됩니다.</p>
       <div class="form-group">
-        <label>API Key</label>
+        <label>Anthropic API Key <span class="required">*</span></label>
         <input type="password" id="apiKeyInput" placeholder="sk-ant-..." autocomplete="off" />
+        <span class="field-hint">이미지 분석 · 스토리보드 생성에 사용</span>
+      </div>
+      <div class="form-group">
+        <label>OpenAI API Key <span class="optional">(선택)</span></label>
+        <input type="password" id="openaiKeyInput" placeholder="sk-proj-..." autocomplete="off" />
+        <span class="field-hint">DALL-E 3 스토리보드 일러스트 생성에 사용. 없으면 SVG로 대체됩니다.</span>
       </div>
       <div class="modal-actions">
         <button class="btn btn-secondary" id="btnCancelApi">취소</button>
