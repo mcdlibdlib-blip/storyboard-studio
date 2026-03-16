@@ -712,12 +712,44 @@ async function generateSceneIllustrations(scenes) {
     if (frame) frame.classList.add('frame-loading');
   });
 
-  // Show illustration loading banner
+  // Estimated time: ~8s per scene (all generated in one call)
+  const estSec  = Math.max(20, scenes.length * 8);
+  const startTime = Date.now();
+
+  // Build banner with progress bar
   const banner = document.createElement('div');
   banner.id = 'illustBanner';
   banner.className = 'illust-banner';
-  banner.innerHTML = `<svg class="spinner" viewBox="0 0 24 24" width="16" height="16"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 70"/></svg> AI가 각 씬의 일러스트를 그리고 있습니다...`;
+  banner.innerHTML = `
+    <div class="illust-banner-top">
+      <div class="illust-banner-left">
+        <svg class="spinner" viewBox="0 0 24 24" width="15" height="15"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 70"/></svg>
+        <span id="illustStatus">AI가 각 씬의 일러스트를 그리고 있습니다...</span>
+      </div>
+      <span id="illustTimeLeft" class="illust-time"></span>
+    </div>
+    <div class="illust-bar-wrap">
+      <div class="illust-bar-fill" id="illustBarFill"></div>
+    </div>`;
   scenesContainer.insertAdjacentElement('beforebegin', banner);
+
+  const illustInterval = setInterval(() => {
+    const elapsed = (Date.now() - startTime) / 1000;
+    const pct     = 1 - Math.exp(-elapsed / (estSec * 0.6));
+    const display = Math.min(pct * 92, 92);
+    const left    = Math.ceil(estSec - elapsed);
+
+    const barFill = document.getElementById('illustBarFill');
+    if (barFill) barFill.style.width = display.toFixed(1) + '%';
+
+    const timeEl = document.getElementById('illustTimeLeft');
+    if (timeEl) {
+      timeEl.textContent = left > 5
+        ? `약 ${left}초 남음`
+        : left > 0 ? '거의 다 됐어요...'
+        : '마무리 중...';
+    }
+  }, 500);
 
   try {
     const sceneInfo = scenes.map(s => ({
@@ -788,7 +820,11 @@ SVG 생성 규칙:
       if (frame) frame.classList.remove('frame-loading');
     });
   } finally {
-    document.getElementById('illustBanner')?.remove();
+    clearInterval(illustInterval);
+    // Fill to 100% briefly before removing
+    const barFill = document.getElementById('illustBarFill');
+    if (barFill) barFill.style.width = '100%';
+    setTimeout(() => document.getElementById('illustBanner')?.remove(), 500);
   }
 }
 
