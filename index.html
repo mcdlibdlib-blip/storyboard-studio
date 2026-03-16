@@ -162,9 +162,16 @@
             <span class="btn-text">스토리보드 생성</span>
             <span class="btn-loader" hidden>
               <svg class="spinner" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" fill="none" stroke-dasharray="30 70"/></svg>
-              생성 중...
+              생성 중... <span id="genTimer" class="gen-timer"></span>
             </span>
           </button>
+          <div class="gen-progress" id="genProgress" hidden>
+            <div class="gen-progress-bar" id="genProgressBar"></div>
+            <div class="gen-progress-info">
+              <span id="genStatus">AI가 스토리보드를 작성하고 있습니다...</span>
+              <span id="genTimeLeft"></span>
+            </div>
+          </div>
         </div>
       </div>
     </section>

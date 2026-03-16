@@ -460,7 +460,55 @@ body {
 
 .form-group select { appearance: none; cursor: pointer; }
 
-.form-actions { display: flex; gap: 12px; align-items: center; margin-top: 28px; }
+.form-actions { display: flex; gap: 12px; align-items: center; margin-top: 28px; flex-wrap: wrap; }
+
+/* Generation progress */
+.gen-timer { font-variant-numeric: tabular-nums; opacity: 0.75; font-size: 14px; }
+
+.gen-progress {
+  width: 100%;
+  margin-top: 16px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius2);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gen-progress-bar {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  position: relative;
+}
+
+.gen-progress-bar::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  height: 100%;
+  width: var(--pct, 0%);
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  border-radius: 2px;
+  transition: width 0.8s ease;
+}
+
+.gen-progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--text2);
+}
+
+#genTimeLeft {
+  font-variant-numeric: tabular-nums;
+  color: var(--text3);
+  font-size: 12px;
+}
 
 /* =====================
    STORYBOARD OUTPUT

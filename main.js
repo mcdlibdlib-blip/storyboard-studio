@@ -230,6 +230,100 @@ function setBtnLoading(btn, loading) {
   btn.disabled = loading;
 }
 
+// =====================
+// GENERATION TIMER
+// =====================
+let genTimerInterval = null;
+
+// Estimated durations per video length (seconds)
+const EST_DURATION = { '15초': 18, '30초': 25, '60초': 32, '3분': 40 };
+
+function startGenTimer(duration) {
+  const totalSec   = EST_DURATION[duration] || 25;
+  const startTime  = Date.now();
+  const timerEl    = $('genTimer');
+  const progressEl = $('genProgress');
+  const barEl      = $('genProgressBar');
+  const timeLeftEl = $('genTimeLeft');
+  const statusEl   = $('genStatus');
+
+  const statusMessages = [
+    '스타일 가이드 분석 중...',
+    '씬 구성을 설계하고 있습니다...',
+    'AI가 각 씬을 작성하고 있습니다...',
+    '카피와 아트 디렉션을 다듬는 중...',
+    '마무리 작업 중...',
+  ];
+
+  progressEl.hidden = false;
+  barEl.style.setProperty('--pct', '0%');
+
+  genTimerInterval = setInterval(() => {
+    const elapsed = (Date.now() - startTime) / 1000;
+    const pct     = Math.min(elapsed / totalSec, 0.95); // cap at 95% until done
+    const left    = Math.max(Math.ceil(totalSec - elapsed), 1);
+
+    // Update progress bar
+    barEl.style.setProperty('--pct', (pct * 100).toFixed(1) + '%');
+
+    // Update timer in button
+    const elapsedInt = Math.floor(elapsed);
+    timerEl.textContent = `(${elapsedInt}s)`;
+
+    // Update time left
+    timeLeftEl.textContent = `약 ${left}초 남음`;
+
+    // Cycle status messages
+    const msgIdx = Math.min(Math.floor(pct * statusMessages.length), statusMessages.length - 1);
+    statusEl.textContent = statusMessages[msgIdx];
+  }, 500);
+}
+
+function stopGenTimer() {
+  if (genTimerInterval) {
+    clearInterval(genTimerInterval);
+    genTimerInterval = null;
+  }
+  // Fill bar to 100%
+  const barEl = $('genProgressBar');
+  if (barEl) barEl.style.setProperty('--pct', '100%');
+  setTimeout(() => {
+    const progressEl = $('genProgress');
+    if (progressEl) progressEl.hidden = true;
+    const timerEl = $('genTimer');
+    if (timerEl) timerEl.textContent = '';
+  }, 600);
+}
+
+// =====================
+// COMPLETION SOUND
+// =====================
+function playCompletionSound() {
+  try {
+    const ctx  = new (window.AudioContext || window.webkitAudioContext)();
+    const notes = [
+      { freq: 523.25, start: 0,    dur: 0.15 }, // C5
+      { freq: 659.25, start: 0.15, dur: 0.15 }, // E5
+      { freq: 783.99, start: 0.30, dur: 0.25 }, // G5
+    ];
+    notes.forEach(({ freq, start, dur }) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, ctx.currentTime + start);
+      gain.gain.linearRampToValueAtTime(0.18, ctx.currentTime + start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
+      osc.start(ctx.currentTime + start);
+      osc.stop(ctx.currentTime + start + dur + 0.05);
+    });
+  } catch (e) {
+    // AudioContext not available — ignore silently
+  }
+}
+
 btnAnalyze.addEventListener('click', async () => {
   if (!state.images.length) return;
 
@@ -343,13 +437,13 @@ btnGenerate.addEventListener('click', async () => {
   if (!message) { showToast('핵심 메시지를 입력해주세요', 'error'); $('coreMessage').focus(); return; }
 
   setBtnLoading(btnGenerate, true);
+  const duration = $('adDuration').value;
+  startGenTimer(duration);
 
   try {
     const target   = $('targetAudience').value.trim();
-    const duration = $('adDuration').value;
     const notes    = $('extraNotes').value.trim();
     const r        = state.analysisResult;
-
     const styleGuide = r ? `
 **분석된 비주얼 스타일:**
 - 컬러 팔레트: ${r.colors?.palette?.join(', ')} — ${r.colors?.description}
@@ -412,11 +506,14 @@ ${styleGuide}
     );
 
     state.storyboard = extractJSON(rawText);
+    stopGenTimer();
+    playCompletionSound();
     goToStep(3);
     renderStoryboard(state.storyboard, product, duration);
 
   } catch (err) {
     console.error(err);
+    stopGenTimer();
     showToast('생성 실패: ' + err.message, 'error');
   } finally {
     setBtnLoading(btnGenerate, false);
