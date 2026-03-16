@@ -177,6 +177,35 @@ btnToStep2.addEventListener('click', () => goToStep(2));
 btnBackToStep1.addEventListener('click', () => goToStep(1));
 
 // =====================
+// CATEGORY SELECTION
+// =====================
+const CATEGORY_META = {
+  emotional:  { name: '감성적',           guide: '잔잔하고 서정적인 감동 중심. 느린 컷, 자연광, 감성적 음악. 감정이입과 공감을 극대화하는 연출.' },
+  humor:      { name: '유머 & 위트',       guide: '재치있는 상황 설정과 반전. 밝고 경쾌한 컷 편집, 코믹한 타이밍과 카피. 바이럴 가능성을 고려한 연출.' },
+  energetic:  { name: '에너지 & 다이나믹', guide: '빠른 컷 편집, 역동적인 카메라 무브먼트, 강렬한 비트 음악. 속도감과 흥분감을 극대화.' },
+  visual:     { name: '비주얼 임팩트',     guide: '압도적인 화면 구성, 강렬한 색감 대비, 시각적 충격. 매 씬이 독립적인 아트워크처럼 기억에 남도록 연출.' },
+  luxury:     { name: '럭셔리 & 프리미엄', guide: '절제된 색감(모노크롬·골드), 느린 슬로모션, 미니멀한 카피. 침묵과 여백을 활용한 우아한 연출.' },
+  lifestyle:  { name: '라이프스타일',      guide: '자연스럽고 따뜻한 일상 장면. 핸드헬드 카메라, 자연광, 실제 공간. 진정성 있는 스토리텔링.' },
+  cinematic:  { name: '시네마틱',          guide: '영화적 조명과 구도, 강한 내러티브 흐름. 인물 중심 드라마와 감정 아크. 영화 예고편 스타일의 연출.' },
+  minimal:    { name: '미니멀 & 심플',     guide: '흰 공간과 단색 배경, 텍스트 중심 구성. 복잡함을 걷어낸 명료한 메시지 전달. 모던하고 지적인 톤.' },
+};
+
+const selectedCategories = new Set();
+
+document.getElementById('categoryGrid').addEventListener('click', e => {
+  const card = e.target.closest('.cat-card');
+  if (!card) return;
+  const id = card.dataset.id;
+  if (selectedCategories.has(id)) {
+    selectedCategories.delete(id);
+    card.classList.remove('selected');
+  } else {
+    selectedCategories.add(id);
+    card.classList.add('selected');
+  }
+});
+
+// =====================
 // CLAUDE API
 // =====================
 async function callClaude(messages, system = '') {
@@ -441,6 +470,7 @@ btnGenerate.addEventListener('click', async () => {
   const product = $('productName').value.trim();
   const message = $('coreMessage').value.trim();
 
+  if (!selectedCategories.size) { showToast('광고 무드를 하나 이상 선택해주세요', 'error'); document.getElementById('categoryGrid').scrollIntoView({ behavior: 'smooth', block: 'center' }); return; }
   if (!product) { showToast('제품/서비스명을 입력해주세요', 'error'); $('productName').focus(); return; }
   if (!message) { showToast('핵심 메시지를 입력해주세요', 'error'); $('coreMessage').focus(); return; }
 
@@ -463,6 +493,10 @@ btnGenerate.addEventListener('click', async () => {
 
     const sceneCount = duration === '15초' ? 4 : duration === '30초' ? 6 : duration === '60초' ? 8 : 10;
 
+    const categoryGuide = [...selectedCategories]
+      .map(id => `- ${CATEGORY_META[id].name}: ${CATEGORY_META[id].guide}`)
+      .join('\n');
+
     const prompt = `다음 광고 정보를 바탕으로 ${sceneCount}개 씬의 스토리보드를 생성하세요.
 
 **광고 정보:**
@@ -471,6 +505,9 @@ btnGenerate.addEventListener('click', async () => {
 - 타겟 오디언스: ${target || '미정'}
 - 영상 길이: ${duration}
 - 추가 요청: ${notes || '없음'}
+
+**선택된 광고 무드 (반드시 이 방향성을 스토리보드 전체에 일관되게 반영하세요):**
+${categoryGuide}
 
 ${styleGuide}
 
@@ -536,6 +573,15 @@ function renderStoryboard(sb, productName, duration) {
 
   // Style tags bar
   styleBar.innerHTML = '';
+
+  // Selected mood categories first
+  [...selectedCategories].forEach(id => {
+    const el = document.createElement('span');
+    el.className = 'tag tag-mood';
+    el.textContent = CATEGORY_META[id]?.name || id;
+    styleBar.appendChild(el);
+  });
+
   (sb.style_keywords || []).forEach(k => {
     const el = document.createElement('span');
     el.className = 'tag';
